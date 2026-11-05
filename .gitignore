@@ -1,0 +1,51 @@
+
+# Dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Python / AI
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# AI model files
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+
+# Native build outputs
+.gradle/
+*.apk
+*.aab
+ios/Pods/
+
+# Temporary files
+*.tmp
+*.log
+  
