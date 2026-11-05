@@ -2,7 +2,7 @@
 
 ## 기술 스택
 - React Native
-- JavaScript
+- TypeScript
 - Expo (초기 개발 도구)
 
 ## 담당 기능
