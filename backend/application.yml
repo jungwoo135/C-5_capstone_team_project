@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    # 접속 정보는 코드에 적지 않고 환경 변수로 넘깁니다. (비밀번호 유출 방지)
+    # DB_HOST 예: shinjung.xxxxxxxx.ap-northeast-2.rds.amazonaws.com
+    # sslMode=trust: 통신은 암호화하지만 서버 인증서는 검사하지 않습니다.
+    # 실제 서비스에서는 RDS 인증서를 받아 DB_SSL_MODE=verify-full 로 바꾸세요.
+    url: jdbc:mariadb://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:shinjung}?sslMode=${DB_SSL_MODE:trust}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+  jpa:
+    # 테이블은 db/schema.sql로 만듭니다. JPA가 테이블을 임의로 바꾸지 못하게 막습니다.
+    hibernate:
+      ddl-auto: none
+    # 트랜잭션이 끝난 뒤 화면 응답 단계에서 몰래 DB를 조회하지 않도록 합니다.
+    open-in-view: false
+  mvc:
+    # 오류 응답을 JSON으로 보내고, 오류 문구를 detail 항목에 담습니다. (React가 이 값을 읽습니다)
+    problemdetails:
+      enabled: true
+
+app:
+  cors:
+    # 접속을 허용할 React 주소입니다. 여러 개는 쉼표로 구분합니다.
+    # 5173은 Vite, 3000은 Create React App의 기본 포트입니다.
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:3000}
