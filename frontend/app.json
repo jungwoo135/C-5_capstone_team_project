@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "frontend-app",
+    "name": "신중",
     "slug": "frontend-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,18 +15,36 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "package": "com.jungwoo24.frontendapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-font"
     ],
     "scheme": "aisecondhand",
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "56c43667-835a-4d24-a5ef-03063857c1b3"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/56c43667-835a-4d24-a5ef-03063857c1b3"
     }
   }
 }
