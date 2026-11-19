@@ -30,8 +30,8 @@ AI가 사전에 정의된 검증 기준에 따라 상품 정보를
 
 ## 기술 스택
 
-- Frontend: React Native, JavaScript
-- Backend: JAVA
+- Frontend: React Native + TypeScript
+- Backend: NextJS
 - AI: 추후 확정
 - Collaboration: GitHub, GitHub Projects
 
