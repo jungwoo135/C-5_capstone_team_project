@@ -17,6 +17,7 @@ import BottomNavigation from '../components/BottomNavigation';
 
 import { COLORS } from '../constants/theme';
 import { products } from '../data/products';
+import { Link } from 'expo-router';
 
 export default function HomeScreen() {
   return (
@@ -117,6 +118,9 @@ export default function HomeScreen() {
             ))}
           </View>
         </View>
+        <Link href="/api-test">
+          백엔드 연결 테스트
+        </Link>
       </ScrollView>
 
       {/* 3. 고정 물건 등록 버튼 */}
