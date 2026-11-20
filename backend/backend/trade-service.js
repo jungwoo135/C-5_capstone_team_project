@@ -1,27 +1,13 @@
+import { SALES_STATUS } from "./constants.js";
 import { withTransaction } from "./db.js";
+import { ApiError } from "./http.js";
+import { koreaNow } from "./time.js";
 
-/** 거래가 끝난 물품의 판매 상태 값 */
-export const SALES_STATUS_SOLD = "SOLD";
+/** (예전 이름과의 호환용) 거래가 끝난 물품의 판매 상태 값 */
+export const SALES_STATUS_SOLD = SALES_STATUS.SOLD;
 
-/** 화면에 보여줄 문구와 HTTP 상태 코드를 담는 오류 */
-export class TradeError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
-
-/**
- * AWS 서버의 기본 시간대는 보통 UTC이므로 한국 시간을 직접 만듭니다.
- * 결과 예: "2026-11-06 13:46:00" (DATETIME 형식, 초 단위)
- */
-function koreaNow() {
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Seoul",
-    dateStyle: "short",
-    timeStyle: "medium",
-  }).format(new Date());
-}
+/** 화면에 보여줄 문구와 HTTP 상태 코드를 담는 오류 (ApiError와 같은 역할) */
+export class TradeError extends ApiError {}
 
 /**
  * 거래 완료 처리.
@@ -36,14 +22,18 @@ export async function completeTrade({ itemId, sellerId, buyerId }) {
     // 1. 물품을 잠그고, 이미 팔린 물품인지 확인합니다.
     // FOR UPDATE: 같은 물품에 요청이 동시에 와도 하나씩 차례로 처리되어 이중 판매를 막습니다.
     const [items] = await connection.execute(
-      "SELECT item_id, sales_status FROM item WHERE item_id = ? FOR UPDATE",
+      "SELECT item_id, seller_id, sales_status FROM item WHERE item_id = ? FOR UPDATE",
       [itemId],
     );
     if (items.length === 0) {
       throw new TradeError(404, "물품을 찾을 수 없습니다.");
     }
-    if (items[0].sales_status === SALES_STATUS_SOLD) {
+    if (items[0].sales_status === SALES_STATUS.SOLD) {
       throw new TradeError(409, "이미 판매 완료된 물품입니다.");
+    }
+    // 물품을 등록한 판매자(로그인한 사용자)만 거래를 완료할 수 있습니다.
+    if (Number(items[0].seller_id) !== sellerId) {
+      throw new TradeError(403, "물품을 등록한 판매자만 거래 완료할 수 있습니다.");
     }
 
     // 2. 판매자와 구매자를 ID가 작은 순서대로 잠급니다.
@@ -82,14 +72,14 @@ export async function completeTrade({ itemId, sellerId, buyerId }) {
     );
     await connection.execute(
       "UPDATE item SET sales_status = ? WHERE item_id = ?",
-      [SALES_STATUS_SOLD, itemId],
+      [SALES_STATUS.SOLD, itemId],
     );
 
     return {
       salesId: salesResult.insertId,
       purchaseId: purchaseResult.insertId,
       itemId,
-      salesStatus: SALES_STATUS_SOLD,
+      salesStatus: SALES_STATUS.SOLD,
       completedAt: now.replace(" ", "T"),
     };
   });

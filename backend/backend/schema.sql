@@ -1,5 +1,10 @@
 -- ============================================================
--- 신중: 신뢰가는 중고거래 - MariaDB 전체 스키마 (테이블 11개)
+-- 신중: 신뢰가는 중고거래 - MariaDB 전체 스키마 v2 (테이블 11개)
+--
+-- v1에서 바뀐 점 (이미 v1으로 만든 DB는 이 파일 대신 migration-v2.sql을 실행하세요)
+--   1. item.seller_id 추가: 물품을 등록한 판매자 (users 참조)
+--   2. users.password_hash 추가: 로그인 비밀번호 해시
+--   3. 중복 방지 제약 추가: 찜(유저+물품), 차단(차단자+대상), 평가(물품+작성자)
 --
 -- 생성 순서가 중요합니다.
 --   users <-> item_sales, users <-> item_purchase 는 서로를 참조합니다.
@@ -7,7 +12,7 @@
 --   users를 외래키 없이 먼저 만들고, 맨 아래 ALTER TABLE에서 연결합니다.
 --
 -- 명세에 길이가 없는 VARCHAR는 아래 길이로 정했습니다.
---   이름/코드류 50, 제목/조건류 200, 이미지 주소 500
+--   이름/코드류 50, 제목/조건류 200, 이미지 주소 500, 비밀번호 해시 255
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS shinjung
@@ -25,12 +30,13 @@ CREATE TABLE category (
 
 -- 2. 유저 (sales_record_id, purchase_record_id 외래키는 맨 아래 ALTER TABLE에서 추가)
 CREATE TABLE users (
-    user_id            BIGINT      NOT NULL AUTO_INCREMENT COMMENT '유저 ID',
-    sales_record_id    BIGINT      NULL COMMENT '판매 기록',
-    purchase_record_id BIGINT      NULL COMMENT '구매 기록',
-    nickname           VARCHAR(50) NOT NULL COMMENT '닉네임',
-    region_code        VARCHAR(50) NOT NULL COMMENT '지역 코드',
-    trust_score        INT         DEFAULT 50 COMMENT '신뢰점수',
+    user_id            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '유저 ID',
+    sales_record_id    BIGINT       NULL COMMENT '판매 기록',
+    purchase_record_id BIGINT       NULL COMMENT '구매 기록',
+    nickname           VARCHAR(50)  NOT NULL COMMENT '닉네임',
+    password_hash      VARCHAR(255) NOT NULL COMMENT '비밀번호 해시 (비밀번호 원문은 저장하지 않음)',
+    region_code        VARCHAR(50)  NOT NULL COMMENT '지역 코드',
+    trust_score        INT          DEFAULT 50 COMMENT '신뢰점수',
     PRIMARY KEY (user_id),
     CONSTRAINT uk_users_nickname UNIQUE (nickname)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='유저';
@@ -39,15 +45,17 @@ CREATE TABLE users (
 CREATE TABLE item (
     item_id           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '물품 ID',
     category_id       BIGINT       NOT NULL COMMENT '카테고리 ID',
+    seller_id         BIGINT       NOT NULL COMMENT '판매자 ID (물품 등록자)',
     title             VARCHAR(200) NOT NULL COMMENT '제목',
     price             INT          NOT NULL COMMENT '가격',
     content           TEXT         NOT NULL COMMENT '본문 내용',
     item_image        VARCHAR(500) NULL COMMENT '제품 이미지',
-    sales_status      VARCHAR(50)  NOT NULL COMMENT '판매 상태',
+    sales_status      VARCHAR(50)  NOT NULL COMMENT '판매 상태 (ON_SALE/RESERVED/SOLD)',
     ai_photo_verified BOOLEAN      NOT NULL COMMENT 'AI 사진 검토 여부',
     created_at        DATETIME     NOT NULL COMMENT '등록 일자',
     PRIMARY KEY (item_id),
-    CONSTRAINT fk_item_category FOREIGN KEY (category_id) REFERENCES category (category_id)
+    CONSTRAINT fk_item_category FOREIGN KEY (category_id) REFERENCES category (category_id),
+    CONSTRAINT fk_item_seller   FOREIGN KEY (seller_id)   REFERENCES users (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='물품';
 
 -- 4. 물품 판매
@@ -80,7 +88,8 @@ CREATE TABLE block_list (
     blocked_at      DATETIME NOT NULL COMMENT '차단 일시',
     PRIMARY KEY (block_id),
     CONSTRAINT fk_block_list_blocker FOREIGN KEY (blocker_user_id) REFERENCES users (user_id),
-    CONSTRAINT fk_block_list_blocked FOREIGN KEY (blocked_user_id) REFERENCES users (user_id)
+    CONSTRAINT fk_block_list_blocked FOREIGN KEY (blocked_user_id) REFERENCES users (user_id),
+    CONSTRAINT uk_block_pair UNIQUE (blocker_user_id, blocked_user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='차단 목록';
 
 -- 7. 물품 인증
@@ -90,7 +99,7 @@ CREATE TABLE item_authentication (
     auth_type         VARCHAR(50)  NOT NULL COMMENT '인증 유형',
     serial_number     VARCHAR(200) NULL COMMENT '시리얼 번호',
     auth_image        VARCHAR(500) NULL COMMENT '인증 사진',
-    reliability_score DOUBLE       NOT NULL COMMENT '신뢰도 수치',
+    reliability_score DOUBLE       NOT NULL COMMENT '신뢰도 수치 (0~100, AI가 계산)',
     PRIMARY KEY (auth_id),
     CONSTRAINT fk_item_authentication_item FOREIGN KEY (item_id) REFERENCES item (item_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='물품 인증';
@@ -103,7 +112,8 @@ CREATE TABLE wishlist (
     wished_at DATETIME NOT NULL COMMENT '찜 등록 일시',
     PRIMARY KEY (wish_id),
     CONSTRAINT fk_wishlist_user FOREIGN KEY (user_id) REFERENCES users (user_id),
-    CONSTRAINT fk_wishlist_item FOREIGN KEY (item_id) REFERENCES item (item_id)
+    CONSTRAINT fk_wishlist_item FOREIGN KEY (item_id) REFERENCES item (item_id),
+    CONSTRAINT uk_wishlist_user_item UNIQUE (user_id, item_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='찜 목록';
 
 -- 9. 뱃지
@@ -111,7 +121,7 @@ CREATE TABLE badge (
     badge_id              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '뱃지 ID',
     badge_name            VARCHAR(50)  NOT NULL COMMENT '뱃지명',
     badge_image           VARCHAR(500) NULL COMMENT '뱃지 이미지',
-    achievement_condition VARCHAR(200) NOT NULL COMMENT '달성 조건',
+    achievement_condition VARCHAR(200) NOT NULL COMMENT '달성 조건 (자동 부여: TRUST_SCORE>=80, TRADE_COUNT>=10 형식)',
     PRIMARY KEY (badge_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='뱃지';
 
@@ -130,14 +140,15 @@ CREATE TABLE user_badge (
 CREATE TABLE trading_evaluation (
     eval_id          BIGINT      NOT NULL AUTO_INCREMENT COMMENT '평가 ID',
     item_id          BIGINT      NOT NULL COMMENT '물품 ID',
-    user_id          BIGINT      NOT NULL COMMENT '회원 ID',
-    member_type_code VARCHAR(50) NOT NULL COMMENT '회원 구분 코드',
-    manner_score     INT         NOT NULL COMMENT '매너 평가 점수',
-    comm_score       INT         NOT NULL COMMENT '소통 평가 점수',
-    time_score       INT         NOT NULL COMMENT '시간 평가 점수',
+    user_id          BIGINT      NOT NULL COMMENT '회원 ID (평가 작성자)',
+    member_type_code VARCHAR(50) NOT NULL COMMENT '회원 구분 코드 (SELLER/BUYER)',
+    manner_score     INT         NOT NULL COMMENT '매너 평가 점수 (1~5)',
+    comm_score       INT         NOT NULL COMMENT '소통 평가 점수 (1~5)',
+    time_score       INT         NOT NULL COMMENT '시간 평가 점수 (1~5)',
     PRIMARY KEY (eval_id),
     CONSTRAINT fk_trading_evaluation_item FOREIGN KEY (item_id) REFERENCES item (item_id),
-    CONSTRAINT fk_trading_evaluation_user FOREIGN KEY (user_id) REFERENCES users (user_id)
+    CONSTRAINT fk_trading_evaluation_user FOREIGN KEY (user_id) REFERENCES users (user_id),
+    CONSTRAINT uk_eval_item_user UNIQUE (item_id, user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='거래 평가';
 
 -- 순환 참조 연결: item_sales, item_purchase가 만들어진 뒤에 users 외래키를 추가합니다.

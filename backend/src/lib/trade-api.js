@@ -1,16 +1,17 @@
 /**
- * 거래 완료 API를 호출합니다.
+ * 거래 완료 API를 호출합니다. (로그인한 판매자 본인만 가능)
+ * 판매자는 로그인 쿠키로 자동 판별되므로 물품과 구매자만 넘깁니다.
  * 성공하면 { salesId, purchaseId, itemId, salesStatus, completedAt }을 돌려주고,
  * 실패하면 화면에 보여줄 문구가 담긴 Error를 던집니다.
  */
-export async function completeTrade({ itemId, sellerId, buyerId }) {
+export async function completeTrade({ itemId, buyerId }) {
   let response;
   try {
     // 화면과 API가 같은 Next.js 서버에 있으므로 서버 주소 없이 경로만 적습니다.
     response = await fetch("/api/trades/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId, sellerId, buyerId }),
+      body: JSON.stringify({ itemId, buyerId }),
     });
   } catch {
     throw new Error("서버에 연결할 수 없습니다.");

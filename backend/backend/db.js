@@ -30,6 +30,15 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 /**
+ * 트랜잭션이 필요 없는 SQL 한 건을 실행합니다. (목록 조회, 단건 저장 등)
+ * SELECT면 행 배열을, INSERT/UPDATE/DELETE면 결과 정보(insertId 등)를 돌려줍니다.
+ */
+export async function query(sql, params = []) {
+  const [rows] = await pool.execute(sql, params);
+  return rows;
+}
+
+/**
  * work 안의 SQL을 하나의 트랜잭션으로 실행합니다.
  * work가 끝까지 성공하면 저장하고, 중간에 오류가 나면 전부 취소합니다.
  * (Java의 @Transactional이 하던 일입니다)
