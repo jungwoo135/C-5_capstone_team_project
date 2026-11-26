@@ -2,18 +2,18 @@
 import React from 'react';
 import {
   Text,
-  Image,
   Pressable,
   StyleSheet,
 } from 'react-native';
 
 import { router } from 'expo-router';
 
-import type { Product } from '../types/product';
+import type { Item } from '../services/item-service';
 import { COLORS } from '../constants/theme';
+import ProductImage from './product-image';
 
 interface ProductCardProps {
-  product: Product;
+  product: Item;
 }
 
 export default function ProductCard({
@@ -21,9 +21,9 @@ export default function ProductCard({
 }: ProductCardProps) {
   const handlePress = () => {
     router.push({
-      pathname: '/product/[id]' as any,
+      pathname: '/product/[id]',
       params: {
-        id: String(product.id),
+        id: String(product.itemId),
       },
     });
   };
@@ -35,11 +35,7 @@ export default function ProductCard({
       accessibilityRole="button"
       accessibilityLabel={`${product.title} 상품 상세 보기`}
     >
-      <Image
-        source={{ uri: product.imageUrl }}
-        style={styles.image}
-        resizeMode="cover"
-      />
+      <ProductImage uri={product.itemImage} style={styles.image} />
 
       <Text
         style={styles.title}
@@ -52,16 +48,19 @@ export default function ProductCard({
         {product.price.toLocaleString('ko-KR')}원
       </Text>
 
-      <Text style={styles.location}>
-        {product.location}
-      </Text>
+      {product.location ? (
+        <Text style={styles.location}>{product.location}</Text>
+      ) : null}
+      {product.salesStatus === 'SOLD' && (
+        <Text style={styles.location}>판매완료</Text>
+      )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    width: '48%',
     minWidth: 0,
   },
   image: {

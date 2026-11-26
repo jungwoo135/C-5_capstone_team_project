@@ -1,9 +1,9 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   View,
   Text,
-  Image,
   ScrollView,
   Pressable,
   StyleSheet,
@@ -15,21 +15,56 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { COLORS } from '../../constants/theme';
-import { getProductById } from '../../data/products';
+import ProductImage from '../../components/product-image';
+import { getItem, type Item } from '../../services/item-service';
 
 export default function ProductDetailScreen() {
-  const { id } = useLocalSearchParams<{
-    id: string;
-  }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const itemId = typeof id === 'string' ? id.trim() : '';
+  return <ProductDetail key={itemId} itemId={itemId} />;
+}
 
-  const product = getProductById(id);
+function goBack() {
+  if (router.canGoBack()) {
+    router.back();
+  } else {
+    router.replace('/');
+  }
+}
 
-  // 존재하지 않는 상품에 접근한 경우
+function ProductDetail({ itemId }: { itemId: string }) {
+  const [result, setResult] = useState<Item | null | 'error'>();
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    if (!itemId) return;
+
+    let active = true;
+    getItem(itemId).then(
+      (item) => {
+        if (active) setResult(item);
+      },
+      () => {
+        if (active) setResult('error');
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, [itemId, attempt]);
+
+  const retry = () => {
+    setResult(undefined);
+    setAttempt((value) => value + 1);
+  };
+
+  const product = result === 'error' ? null : result;
   if (!product) {
     return (
       <SafeAreaView style={styles.screen}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={goBack}
+          accessibilityRole="button"
           style={styles.header}
         >
           <Ionicons
@@ -41,13 +76,36 @@ export default function ProductDetailScreen() {
         </Pressable>
 
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>
-            상품을 찾을 수 없습니다.
-          </Text>
+          {itemId && result === undefined ? (
+            <ActivityIndicator
+              color={COLORS.primary}
+              accessibilityLabel="상품 상세 불러오는 중"
+            />
+          ) : (
+            <Text style={styles.emptyText}>
+              {result === 'error'
+                ? '상품 정보를 불러오지 못했습니다.'
+                : '상품을 찾을 수 없습니다.'}
+            </Text>
+          )}
+          {result === 'error' && (
+            <Pressable accessibilityRole="button" onPress={retry}>
+              <Text style={styles.retry}>다시 시도</Text>
+            </Pressable>
+          )}
         </View>
       </SafeAreaView>
     );
   }
+
+  const metadata = [product.location, product.createdAt?.split('T')[0]]
+    .filter(Boolean)
+    .join(' | ');
+  const tags = [
+    product.categoryName,
+    product.condition,
+    product.salesStatus === 'SOLD' ? '판매완료' : null,
+  ].filter(Boolean);
 
   return (
     <SafeAreaView
@@ -61,7 +119,7 @@ export default function ProductDetailScreen() {
       {/* 상단 고정 헤더 */}
       <View style={styles.header}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={goBack}
           hitSlop={12}
           accessibilityRole="button"
           accessibilityLabel="뒤로 가기"
@@ -85,102 +143,58 @@ export default function ProductDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* 상품 이미지 */}
-        <Image
-          source={{ uri: product.imageUrl }}
-          style={styles.productImage}
-          resizeMode="cover"
-        />
+        <ProductImage uri={product.itemImage} style={styles.productImage} />
 
         {/* 상품명 */}
         <Text style={styles.productTitle}>
-          {product.detailTitle}
+          {product.title}
         </Text>
 
         {/* 위치 및 등록 시간 */}
-        <Text style={styles.productMeta}>
-          {product.location} | {product.createdAt}
-        </Text>
+        {metadata ? <Text style={styles.productMeta}>{metadata}</Text> : null}
 
         {/* 가격 */}
         <Text style={styles.price}>
-          {product.price}원
+          {product.price.toLocaleString('ko-KR')}원
         </Text>
 
         {/* 상품 태그 */}
-        <View style={styles.tagRow}>
-          <View style={styles.tag}>
-            <Text style={styles.tagText}>
-              {product.category}
-            </Text>
+        {tags.length > 0 && (
+          <View style={styles.tagRow}>
+            {tags.map((label, index) => (
+              <View key={index} style={styles.tag}>
+                <Text style={styles.tagText}>{label}</Text>
+              </View>
+            ))}
           </View>
-
-          <View style={styles.tag}>
-            <Text style={styles.tagText}>
-              {product.condition}
-            </Text>
-          </View>
-        </View>
+        )}
 
         {/* 판매자 신뢰 카드 */}
-        <View style={styles.sellerCard}>
-          <View style={styles.sellerInfoRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                봄
-              </Text>
-            </View>
-
-            <View style={styles.sellerText}>
-              <Text style={styles.sellerName}>
-                {product.seller.name}
-              </Text>
-
-              <Text style={styles.sellerStats}>
-                판매완료 {product.seller.salesCount}건
-              </Text>
-            </View>
-
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={COLORS.primary}
-            />
-          </View>
-
-          {/* 판매자 상태 태그 */}
-          <View style={styles.trustRow}>
-            <View style={styles.trustBadge}>
-              <Text style={styles.trustText}>
-                {product.seller.identityVerified
-                  ? '본인인증 완료'
-                  : '본인인증 미완료'}
-              </Text>
-            </View>
-
-            <View style={styles.trustBadge}>
-              <Text style={styles.trustText}>
-                {product.seller.neighborhoodVerified
-                  ? '동네인증 완료'
-                  : '동네인증 대기'}
-              </Text>
-            </View>
-
-            <View style={styles.trustBadge}>
-              <Text style={styles.trustText}>
-                판매완료 {product.seller.salesCount}건
-              </Text>
+        {product.sellerNickname ? (
+          <View style={styles.sellerCard}>
+            <View style={styles.sellerInfoRow}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{product.sellerNickname.slice(0, 1)}</Text>
+              </View>
+              <View style={styles.sellerText}>
+                <Text style={styles.sellerName}>{product.sellerNickname}</Text>
+                {typeof product.sellerTrustScore === 'number' && (
+                  <Text style={styles.sellerStats}>신뢰 점수 {product.sellerTrustScore}</Text>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
             </View>
           </View>
-        </View>
+        ) : null}
 
         {/* 상품 설명 */}
-        <Text style={styles.description}>
-          {product.description}
-        </Text>
+        {product.content ? <Text style={styles.description}>{product.content}</Text> : null}
 
         {/* AI 상품 인증 안내 */}
         <Text style={styles.certificationNotice}>
-          상품 인증은 별도 검토가 필요해요.
+          {product.aiPhotoVerified
+            ? 'AI 사진 인증 완료'
+            : '상품 인증은 별도 검토가 필요해요.'}
         </Text>
       </ScrollView>
 
@@ -245,6 +259,11 @@ const styles = StyleSheet.create({
     color: COLORS.muted,
     textAlign: 'center',
     fontWeight: '600',
+  },
+  retry: {
+    padding: 12,
+    color: COLORS.primary,
+    fontWeight: '700',
   },
 
   // 상품 이미지
@@ -332,24 +351,6 @@ const styles = StyleSheet.create({
   sellerStats: {
     fontSize: 11,
     color: COLORS.muted,
-  },
-
-  // 판매자 신뢰 정보
-  trustRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 7,
-  },
-  trustBadge: {
-    backgroundColor: COLORS.primaryLight,
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  trustText: {
-    fontSize: 11,
-    color: COLORS.primary,
-    fontWeight: '700',
   },
 
   // 설명
