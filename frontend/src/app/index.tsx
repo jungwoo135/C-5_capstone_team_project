@@ -1,6 +1,8 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Pressable,
   View,
   Text,
   ScrollView,
@@ -10,16 +12,41 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Link, router } from 'expo-router';
 
 import ProductCard from '../components/ProductCard';
 import CategoryCard from '../components/CategoryCard';
 import BottomNavigation from '../components/BottomNavigation';
+import HomeMenu from '../components/home-menu';
 
 import { COLORS } from '../constants/theme';
-import { products } from '../data/products';
-import { Link } from 'expo-router';
+import { getItems, type Item } from '../services/item-service';
 
 export default function HomeScreen() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [result, setResult] = useState<Item[] | 'error'>();
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    getItems().then(
+      (items) => {
+        if (active) setResult(items);
+      },
+      () => {
+        if (active) setResult('error');
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, [attempt]);
+
+  const retry = () => {
+    setResult(undefined);
+    setAttempt((value) => value + 1);
+  };
+
   return (
     <SafeAreaView
       style={styles.screen}
@@ -31,11 +58,15 @@ export default function HomeScreen() {
 
       {/* 1. 고정 헤더 */}
       <View style={styles.header}>
-        <Ionicons
-          name="menu"
-          size={25}
-          color={COLORS.text}
-        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="메뉴 열기"
+          accessibilityState={{ expanded: menuOpen }}
+          hitSlop={10}
+          onPress={() => setMenuOpen(true)}
+        >
+          <Ionicons name="menu" size={25} color={COLORS.text} />
+        </Pressable>
         <Text style={styles.logo}>신중</Text>
       </View>
 
@@ -58,21 +89,17 @@ export default function HomeScreen() {
 
         {/* 검색창 */}
         <View style={styles.searchBar}>
-          <Ionicons
-            name="search-outline"
-            size={23}
-            color="#494550"
-          />
-
-          <Text style={styles.searchPlaceholder}>
-            어떤 물건을 찾으세요?
-          </Text>
-
-          <Ionicons
-            name="image"
-            size={22}
-            color="#494550"
-          />
+          <Link href="/search" asChild>
+            <Pressable style={styles.searchTextButton} accessibilityLabel="물건 검색">
+              <Ionicons name="search-outline" size={23} color="#494550" />
+              <Text style={styles.searchPlaceholder}>어떤 물건을 찾으세요?</Text>
+            </Pressable>
+          </Link>
+          <Link href="/image-search" asChild>
+            <Pressable hitSlop={8} accessibilityLabel="사진으로 찾기">
+              <Ionicons name="image" size={22} color="#494550" />
+            </Pressable>
+          </Link>
         </View>
 
         {/* AI 추천 카테고리 */}
@@ -104,45 +131,59 @@ export default function HomeScreen() {
               최근 등록된 물건
             </Text>
 
-            <Text style={styles.seeAll}>
-              모두 보기 →
-            </Text>
+            <Link href="/recent-items" asChild>
+              <Pressable hitSlop={8}>
+                <Text style={styles.seeAll}>전체 보기 →</Text>
+              </Pressable>
+            </Link>
           </View>
 
-          <View style={styles.productRow}>
-            {products.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-              />
-            ))}
-          </View>
+          {result === undefined ? (
+            <ActivityIndicator
+              style={styles.listState}
+              color={COLORS.primary}
+              accessibilityLabel="상품 목록 불러오는 중"
+            />
+          ) : result === 'error' ? (
+            <View style={styles.listState}>
+              <Text style={styles.stateText}>상품 목록을 불러오지 못했습니다.</Text>
+              <Pressable accessibilityRole="button" onPress={retry}>
+                <Text style={styles.retry}>다시 시도</Text>
+              </Pressable>
+            </View>
+          ) : result.length === 0 ? (
+            <Text style={[styles.listState, styles.stateText]}>등록된 상품이 없습니다.</Text>
+          ) : (
+            <View style={styles.productRow}>
+              {result.map((product) => (
+                <ProductCard key={product.itemId} product={product} />
+              ))}
+            </View>
+          )}
         </View>
-        <Link href="/api-test">
-          백엔드 연결 테스트
-        </Link>
       </ScrollView>
 
       {/* 3. 고정 물건 등록 버튼 */}
-      <View
-        style={styles.floatingButtonContainer}
-        pointerEvents="box-none"
+      <Pressable
+        accessibilityRole="button"
+        style={styles.registerButton}
+        onPress={() => router.push('/register')}
       >
-        <View style={styles.registerButton}>
-          <Ionicons
-            name="add-circle-outline"
-            size={20}
-            color={COLORS.white}
-          />
-
-          <Text style={styles.registerButtonText}>
-            물건 등록
-          </Text>
-        </View>
-      </View>
+        <Ionicons name="add-circle-outline" size={20} color={COLORS.white} />
+        <Text style={styles.registerButtonText}>물건 등록</Text>
+      </Pressable>
 
       {/* 4. 고정 하단 내비게이션 */}
       <BottomNavigation />
+      {menuOpen && (
+        <HomeMenu
+          onClose={() => setMenuOpen(false)}
+          onPhotoSearch={() => {
+            setMenuOpen(false);
+            router.push('/image-search');
+          }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -210,6 +251,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.muted,
   },
+  searchTextButton: {
+    flex: 1,
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
 
   // AI 추천 카테고리
   section: {
@@ -241,18 +289,31 @@ const styles = StyleSheet.create({
   },
   productRow: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 16,
     marginTop: 12,
+  },
+  listState: {
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  stateText: {
+    color: COLORS.muted,
+    textAlign: 'center',
+  },
+  retry: {
+    padding: 12,
+    color: COLORS.primary,
+    fontWeight: '700',
   },
 
   // 고정 물건 등록 버튼
-  floatingButtonContainer: {
+  registerButton: {
     position: 'absolute',
     bottom: 120,
     left: 12,
-    alignItems: 'flex-end',
-  },
-  registerButton: {
+    zIndex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
