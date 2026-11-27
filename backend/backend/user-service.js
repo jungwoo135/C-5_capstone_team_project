@@ -2,7 +2,39 @@ import { query } from "./db.js";
 import { ApiError } from "./http.js";
 import { getUserBadges } from "./social-service.js";
 
-/** 유저 프로필: 기본 정보 + 등록 물품 수 + 거래 횟수 + 뱃지 (누구나 볼 수 있는 정보만) */
+/**
+ * 이 유저가 "받은" 한 줄 후기 최근 5개.
+ * 구매자(BUYER)가 쓴 평가는 물품 판매자가 받은 것, 판매자(SELLER)가 쓴 평가는 그 물품 구매자가 받은 것입니다.
+ */
+async function getRecentReviews(userId) {
+  const rows = await query(
+    `SELECT e.eval_id, e.review_text, e.manner_score, e.comm_score, e.time_score, e.member_type_code,
+            u.nickname AS writer_nickname, i.item_id, i.title
+       FROM trading_evaluation e
+       JOIN item i ON i.item_id = e.item_id
+       JOIN users u ON u.user_id = e.user_id
+      WHERE e.review_text IS NOT NULL
+        AND (
+          (e.member_type_code = 'BUYER' AND i.seller_id = ?)
+          OR (e.member_type_code = 'SELLER'
+              AND EXISTS (SELECT 1 FROM item_purchase p WHERE p.item_id = e.item_id AND p.buyer_id = ?))
+        )
+      ORDER BY e.eval_id DESC
+      LIMIT 5`,
+    [userId, userId],
+  );
+  return rows.map((row) => ({
+    evalId: Number(row.eval_id),
+    itemId: Number(row.item_id),
+    itemTitle: row.title,
+    writerNickname: row.writer_nickname,
+    writerRole: row.member_type_code,
+    reviewText: row.review_text,
+    averageScore: Math.round(((Number(row.manner_score) + Number(row.comm_score) + Number(row.time_score)) / 3) * 10) / 10,
+  }));
+}
+
+/** 유저 프로필: 기본 정보 + 등록 물품 수 + 거래 횟수 + 뱃지 + 받은 후기 (누구나 볼 수 있는 정보만) */
 export async function getUserProfile(userId) {
   const rows = await query(
     `SELECT u.user_id, u.nickname, u.region_code, u.trust_score,
@@ -27,6 +59,7 @@ export async function getUserProfile(userId) {
     purchaseCount,
     tradeCount: salesCount + purchaseCount,
     badges: await getUserBadges(userId),
+    recentReviews: await getRecentReviews(userId),
   };
 }
 

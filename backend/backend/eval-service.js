@@ -30,7 +30,7 @@ export function computeNewTrustScore(currentScore, mannerScore, commScore, timeS
  * 확인 → 저장 → 신뢰점수 갱신 → 뱃지 부여까지 하나의 트랜잭션입니다.
  * 중간에 하나라도 실패하면 전부 취소됩니다.
  */
-export async function submitEvaluation({ writerId, itemId, memberTypeCode, mannerScore, commScore, timeScore }) {
+export async function submitEvaluation({ writerId, itemId, memberTypeCode, mannerScore, commScore, timeScore, reviewText = null }) {
   return withTransaction(async (connection) => {
     // 1. 물품을 잠그고(동시 요청 직렬화) 판매 완료 상태인지 확인합니다.
     const [items] = await connection.execute(
@@ -76,9 +76,9 @@ export async function submitEvaluation({ writerId, itemId, memberTypeCode, manne
     let evalResult;
     try {
       [evalResult] = await connection.execute(
-        `INSERT INTO trading_evaluation (item_id, user_id, member_type_code, manner_score, comm_score, time_score)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [itemId, writerId, memberTypeCode, mannerScore, commScore, timeScore],
+        `INSERT INTO trading_evaluation (item_id, user_id, member_type_code, manner_score, comm_score, time_score, review_text)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [itemId, writerId, memberTypeCode, mannerScore, commScore, timeScore, reviewText],
       );
     } catch (error) {
       if (isDuplicateError(error)) throw new ApiError(409, "이미 이 거래에 평가를 남겼습니다.");
@@ -118,6 +118,7 @@ export async function submitEvaluation({ writerId, itemId, memberTypeCode, manne
       targetUserId,
       newTrustScore,
       grantedBadges,
+      reviewText,
     };
   });
 }

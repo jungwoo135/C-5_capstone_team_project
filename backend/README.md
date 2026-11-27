@@ -26,7 +26,7 @@ DB 테이블 11개와 함께 회원가입·로그인, 물품 등록/조회, 찜,
 
 | 기능 | 설명 |
 | --- | --- |
-| DB 스키마 v2 | 테이블 11개 생성 스크립트(`backend/schema.sql`)와, 운영 중인 v1 DB를 데이터 손실 없이 올리는 마이그레이션(`backend/migration-v2.sql`) |
+| DB 스키마 v3 | 테이블 17개 생성 스크립트(`backend/schema.sql`)와, 운영 중인 DB를 데이터 손실 없이 올리는 마이그레이션(`backend/migration-v2.sql`, `backend/migration-v3.sql`) |
 | 회원가입·로그인 | 닉네임 중복 검사, scrypt 비밀번호 해시, HS256 토큰을 HttpOnly 쿠키로 발급. 외부 패키지 없이 Node 내장 crypto만 사용 |
 | 보호 라우트 | `requireAuth()` 헬퍼로 로그인한 사용자만 쓰기 작업 가능 |
 | 카테고리 목록 | 물품 등록 화면의 선택 상자용 |
@@ -37,13 +37,17 @@ DB 테이블 11개와 함께 회원가입·로그인, 물품 등록/조회, 찜,
 | 뱃지 | 유저별 획득 뱃지 조회 + 조건(`TRADE_COUNT>=N`, `TRUST_SCORE>=N`)을 채우면 자동 부여하는 내부 헬퍼 |
 | 거래 완료 | **로그인한 판매자 본인만.** 판매·구매 기록 생성, `users`의 최근 기록 갱신, 물품 `SOLD` 처리. 행 잠금으로 이중 판매 방지 |
 | 물품 인증 (AI) | 판매자가 요청하면 Python AI 서버를 호출해 `reliability_score` 저장, `ai_photo_verified` 갱신. **8초 타임아웃**으로 AI 서버 장애가 백엔드를 멈추지 못하게 함 |
-| 거래 평가 | 거래 당사자만, 완료(`SOLD`)된 거래만, 물품당 1회만 평가 가능. 상대방 신뢰점수를 공식으로 재계산(0~100)하고 조건을 채운 뱃지를 자동 부여 |
+| 거래 평가 | 거래 당사자만, 완료(`SOLD`)된 거래만, 물품당 1회만 평가 가능. 상대방 신뢰점수를 공식으로 재계산(0~100)하고 조건을 채운 뱃지를 자동 부여. **한 줄 후기(`reviewText`)** 선택 입력, 받은 후기는 프로필에 최근 5개 표시 |
+| 1:1 채팅 (v3) | 물품별 채팅방(구매 희망자 1명당 1방), 메시지 저장, **폴링 방식 실시간**(`?after=마지막ID`로 새 메시지만), 안 읽은 개수, 읽음 처리, 차단 관계 차단. **채팅방에서 거래 완료**(구매자 자동 판별) |
+| 안전 장소 추천 (v3) | 참여자가 **각자 자기 위치만** 제출 → 서버가 중간 지점 주변 안전 장소(경찰관서·CCTV 밀집 구역)를 점수 순으로 추천. 상대 좌표·중간 지점은 앱에 내려가지 않음. 데이터는 공공데이터 CSV를 `load-safe-places.mjs`로 적재 |
+| 거래 약속·도착 판별 (v3) | 약속 제안 → 상대 확정(물품 자동 `RESERVED`) → 약속 시각 ±60분 안에 GPS로 도착 확인(반경 100m) → 둘 다 도착하면 `DONE`. 취소 시 물품 `ON_SALE` 복귀 |
+| 신고 (v3) | 유저·물품·메시지 신고 저장. 자기 자신·내 물품·내 메시지 신고 금지, 같은 대상 중복 신고 방지 |
 
 모든 처리는 트랜잭션으로 묶여 있어 **전부 성공하거나 전부 취소**됩니다.
 
 ### 아직 없는 기능
 
-화면(UI) 전반 · 사진 업로드 · 검색 · 도메인/HTTPS 적용 · 실제 AI 모델(팀원 개발 중, 규격: `docs/AI_SERVER_SPEC.md`)
+화면(UI) 전반 · 사진 업로드 · 서버 측 검색/정렬(현재 프론트에서 처리) · 푸시 알림(폴링으로 대체) · 도메인/HTTPS 적용 · 실제 AI 모델(팀원 개발 중, 규격: `docs/AI_SERVER_SPEC.md`) · 안전 장소 공공데이터 적재(CSV 확보 후)
 
 ---
 
@@ -88,13 +92,16 @@ flowchart LR
 ```
 shinjung-next/
 ├── backend/                         백엔드 코드 전부
-│   ├── schema.sql                   테이블 11개 생성 (v2, 새 DB용)
-│   ├── migration-v2.sql             운영 중인 v1 DB → v2 (데이터 보존, 두 번 실행해도 안전)
+│   ├── schema.sql                   테이블 17개 생성 (v3, 새 DB용)
+│   ├── migration-v2.sql             v1 → v2 (데이터 보존, 두 번 실행해도 안전)
+│   ├── migration-v3.sql             v2 → v3: 채팅·안전 장소·약속·신고·후기 (데이터 보존, 두 번 실행해도 안전)
 │   ├── seed-badges.sql              뱃지 기본 데이터 (선택)
+│   ├── load-safe-places.mjs         공공데이터 CSV(경찰관서, CCTV) → safe_place 적재용 SQL 생성기
 │   ├── constants.js                 판매 상태·평가 역할·뱃지 조건 형식 등 고정 값
 │   ├── db.js                        DB 연결 풀, query(단건)·withTransaction(트랜잭션)
 │   ├── http.js                      공통 오류(ApiError)·응답·입력 검사 도우미
-│   ├── time.js                      한국 시간 문자열(koreaNow)
+│   ├── time.js                      한국 시간 문자열(koreaNow)과 시각 비교 도우미
+│   ├── geo.js                       거리(하버사인)·중간 지점·좌표 범위 계산
 │   ├── auth-service.js / auth-route.js        회원가입·로그인·로그인 확인(requireAuth, resolveUserId)
 │   ├── category-service.js / category-route.js  카테고리 목록
 │   ├── item-service.js / item-route.js        물품 등록·목록·상세·수정·삭제·상태 전환
@@ -102,7 +109,11 @@ shinjung-next/
 │   ├── social-service.js / social-route.js    찜·차단·뱃지 (+뱃지 자동 부여 헬퍼)
 │   ├── trade-service.js / trade-route.js      거래 완료
 │   ├── item-auth-service.js / item-auth-route.js  물품 인증(AI 호출)
-│   └── eval-service.js / eval-route.js        거래 평가·신뢰점수 계산
+│   ├── eval-service.js / eval-route.js        거래 평가·신뢰점수 계산·한 줄 후기
+│   ├── chat-service.js / chat-route.js        1:1 채팅(폴링)·읽음·채팅방 거래 완료
+│   ├── place-service.js / place-route.js      위치 제출·안전 장소 추천
+│   ├── appointment-service.js / appointment-route.js  약속 제안·확정·취소·도착 판별
+│   └── report-service.js / report-route.js    신고
 ├── src/
 │   ├── app/api/.../route.js         주소 연결용 1줄 파일들 (Next.js 규칙상 이 위치 필수)
 │   ├── app/layout.js, app/page.js   화면 기본 틀, 연결 확인용 임시 화면
@@ -110,6 +121,7 @@ shinjung-next/
 │   └── lib/                         화면에서 API를 부르는 함수 모음
 │       ├── auth-api.js  category-api.js  item-api.js  user-api.js
 │       ├── social-api.js  item-auth-api.js  eval-api.js  trade-api.js
+│       ├── chat-api.js(폴링 도우미 포함)  place-api.js  appointment-api.js  report-api.js
 ├── docs/AI_SERVER_SPEC.md           Python AI 서버가 맞춰야 할 요청·응답 규격
 ├── ai-mock/ai_mock_server.py        AI 모의 서버 (Python 3만으로 실행)
 ├── .env.example                     환경 변수 예시
@@ -154,9 +166,15 @@ shinjung-next/
 | 8 | `wishlist` | 찜 목록 | 찜한 물품 | `user_id`, `item_id`, `wished_at` |
 | 9 | `badge` | 뱃지 | 뱃지 종류 | `badge_name`, `badge_image`, `achievement_condition` |
 | 10 | `user_badge` | 유저 뱃지 | 유저가 받은 뱃지 | `user_id`, `badge_id`, `achieved_at` |
-| 11 | `trading_evaluation` | 거래 평가 | 거래 후 평가 | `item_id`, `user_id`, `member_type_code`, `manner_score`, `comm_score`, `time_score` |
+| 11 | `trading_evaluation` | 거래 평가 | 거래 후 평가 | `item_id`, `user_id`, `member_type_code`, `manner_score`, `comm_score`, `time_score`, `review_text`(v3) |
+| 12 | `chat_room` | 채팅방 | 물품×구매 희망자 1방 | `item_id`, `seller_id`, `buyer_id`, `last_message_at` — UNIQUE(`item_id`,`buyer_id`) |
+| 13 | `chat_message` | 채팅 메시지 | 메시지 로그 | `room_id`, `sender_id`, `content`(≤1000), `created_at`, `read_at` |
+| 14 | `chat_location` | 참여자 위치 | 안전 장소 추천용 | PK(`room_id`,`user_id`), `latitude`, `longitude`, `submitted_at` |
+| 15 | `safe_place` | 안전 장소 | 경찰관서·CCTV 밀집 구역 | `place_type`(POLICE/CCTV), `place_name`, `address`, `latitude`, `longitude`, `cctv_count`, `source` |
+| 16 | `appointment` | 거래 약속 | 장소·시간·도착 | `room_id`, `item_id`, `proposed_by`, `place_name`, `latitude`, `longitude`, `scheduled_at`, `status`, `seller_arrived_at`, `buyer_arrived_at` |
+| 17 | `report` | 신고 | 유저·물품·메시지 신고 | `reporter_id`, `target_type`, `target_id`, `reason`, `detail` — UNIQUE(신고자,대상종류,대상) |
 
-모든 테이블의 기본키는 `BIGINT AUTO_INCREMENT`입니다. 컬럼별 자료형과 제약조건은 `backend/schema.sql`을 참고하세요.
+`chat_location`(복합 기본키)을 뺀 모든 테이블의 기본키는 `BIGINT AUTO_INCREMENT`입니다. 컬럼별 자료형과 제약조건은 `backend/schema.sql`을 참고하세요.
 
 ### 관계도 (ERD)
 
@@ -179,7 +197,17 @@ erDiagram
     badge ||--o{ user_badge : "부여됨"
     users ||--o{ trading_evaluation : "평가 작성"
     item ||--o{ trading_evaluation : "평가 대상"
+    item ||--o{ chat_room : "물품별 채팅방 (v3)"
+    users ||--o{ chat_room : "판매자"
+    users ||--o{ chat_room : "구매 희망자"
+    chat_room ||--o{ chat_message : "메시지"
+    users ||--o{ chat_message : "보냄"
+    chat_room ||--o{ chat_location : "참여자 위치"
+    chat_room ||--o{ appointment : "거래 약속"
+    users ||--o{ report : "신고함"
 ```
+
+`safe_place`(안전 장소)는 다른 테이블을 참조하지 않는 독립 테이블이라 그림에서 뺐습니다. `report.target_id`는 대상 종류에 따라 유저·물품·메시지 중 하나를 가리키므로 외래키 없이 서비스 코드에서 존재 여부를 확인합니다.
 
 ### 순환 참조 처리
 
@@ -240,12 +268,29 @@ erDiagram
 | POST `/api/blocks` | 유저 차단 `{targetUserId}` | 필요 | 201 |
 | DELETE `/api/blocks/{userId}` | 차단 해제 | 필요 | 200 |
 | GET `/api/blocks` | 내가 차단한 유저 목록 | 필요 | 200 |
-| GET `/api/users/{userId}` | 유저 프로필 (닉네임, 지역, 신뢰점수, 등록 물품 수, 거래 횟수, 뱃지) | — | 200 |
+| GET `/api/users/{userId}` | 유저 프로필 (닉네임, 지역, 신뢰점수, 등록 물품 수, 거래 횟수, 뱃지, 받은 후기 최근 5개) | — | 200 |
 | GET `/api/users/{userId}/items?salesStatus=&limit=` | 그 유저가 등록한 물품 목록 | — | 200 |
 | GET `/api/users/{userId}/trades` | 판매·구매 내역 `{sales, purchases}` (각 항목에 `evaluated` 포함) | 필요(본인만) | 200 |
 | GET `/api/users/{userId}/badges` | 유저가 받은 뱃지 목록 | — | 200 |
 | POST `/api/trades/complete` | 거래 완료 `{itemId, buyerId}` — 판매자는 로그인 사용자로 자동 판별 | 필요(판매자 본인) | 201 |
-| POST `/api/evaluations` | 거래 평가 `{itemId, memberTypeCode, mannerScore, commScore, timeScore}` | 필요(거래 당사자) | 201 |
+| POST `/api/evaluations` | 거래 평가 `{itemId, memberTypeCode, mannerScore, commScore, timeScore, reviewText?}` | 필요(거래 당사자) | 201 |
+| POST `/api/reports` | 신고 `{targetType: USER\|ITEM\|MESSAGE, targetId, reason: FRAUD\|ABUSE\|SPAM\|FAKE\|OTHER, detail?}` | 필요 | 201 |
+| **채팅 (v3)** | | | |
+| POST `/api/chats` | 채팅방 열기 `{itemId}` (이미 있으면 그 방, 200) | 필요(구매 희망자) | 201 |
+| GET `/api/chats` | 내 채팅방 목록 `{rooms, totalUnread}` (상대 닉네임·마지막 메시지·안 읽은 수) | 필요 | 200 |
+| GET `/api/chats/{roomId}/messages?after=&limit=` | 메시지 조회. `after`를 주면 그 ID 이후 새 메시지만 (**3초마다 호출 = 실시간**) | 필요(참여자) | 200 |
+| POST `/api/chats/{roomId}/messages` | 메시지 보내기 `{content}` (1~1000자, 차단 관계면 403) | 필요(참여자) | 201 |
+| POST `/api/chats/{roomId}/read` | 상대 메시지 읽음 처리 | 필요(참여자) | 200 |
+| POST `/api/chats/{roomId}/complete` | 이 방의 거래 완료 (구매자 자동) | 필요(판매자) | 201 |
+| **안전 장소 (v3)** | | | |
+| POST `/api/chats/{roomId}/location` | 내 위치 제출 `{latitude, longitude}` → `{partnerSubmitted}` | 필요(참여자) | 200 |
+| GET `/api/chats/{roomId}/places?radius=1000` | 중간 지점 주변 안전 장소 최대 5곳 `{ready, places[]}` (반경 100~3000m) | 필요(참여자) | 200 |
+| **약속 (v3)** | | | |
+| GET `/api/chats/{roomId}/appointment` | 이 방의 현재 약속 (없으면 `null`) | 필요(참여자) | 200 |
+| POST `/api/chats/{roomId}/appointment` | 약속 제안 `{placeName, latitude, longitude, scheduledAt:"YYYY-MM-DD HH:MM"}` (진행 중 약속 있으면 409) | 필요(참여자) | 201 |
+| POST `/api/appointments/{id}/confirm` | 약속 확정 → 물품 `RESERVED` | 필요(제안받은 상대) | 200 |
+| POST `/api/appointments/{id}/cancel` | 약속 취소 → 물품 `ON_SALE` 복귀 | 필요(당사자) | 200 |
+| POST `/api/appointments/{id}/arrive` | 도착 확인 `{latitude, longitude}` — 100m 안·약속 ±60분 안이면 기록, 둘 다 도착 시 `DONE` | 필요(당사자) | 200 |
 
 `/api/users/{userId}...` 주소의 `{userId}` 자리에 **`me`**를 넣으면 로그인한 본인을 뜻합니다. (예: `/api/users/me/items` = 내 물품)
 
@@ -377,13 +422,26 @@ npm install && npm run build && pm2 restart shinjung
 마이그레이션 후 기존 테스트 유저('판매자', '구매자')는 로그인할 수 없는 표시(`!`)가 되고,
 기존 물품의 판매자는 1번 유저로 채워집니다. 실제 사용은 새로 가입해서 하세요.
 
+### v3(채팅·안전 장소·약속·신고)를 처음 반영할 때
+
+```
+# 1) DB 구조 올리기 (기존 데이터 보존, 두 번 실행해도 안전)
+mysql -h <RDS주소> -u admin -p --ssl-ca=$HOME/global-bundle.pem --ssl-verify-server-cert < backend/migration-v3.sql
+# 2) 안전 장소 데이터: 공공데이터 CSV → SQL 생성 → 적재 (열 이름은 CSV 머리글에 맞게, 한글 깨지면 --encoding euc-kr)
+node backend/load-safe-places.mjs --type POLICE --file 경찰관서.csv --name 관서명 --address 주소 --encoding euc-kr --source "경찰청 2026" --out police.sql
+node backend/load-safe-places.mjs --type CCTV --file cctv.csv --count 카메라대수 --address 소재지도로명주소 --encoding euc-kr --source "CCTV표준데이터 2026" --out cctv.sql
+mysql -h <RDS주소> -u admin -p --ssl-ca=$HOME/global-bundle.pem --ssl-verify-server-cert < police.sql
+mysql -h <RDS주소> -u admin -p --ssl-ca=$HOME/global-bundle.pem --ssl-verify-server-cert < cctv.sql
+# 3) 코드 재배포 (아래 "평소 코드 반영")
+```
+
 ### 평소 코드 반영
 
 ```
-cd ~/shinjung-next && git pull && npm install && npm run build && pm2 restart shinjung
+cd ~/apps/sinjung && git switch develop && git pull --ff-only origin develop && cd backend && npm ci && npm run build && pm2 restart sinjung-backend --update-env && curl -i http://127.0.0.1:3000/api/health
 ```
 
-(zip 업로드 방식이면 `git pull` 대신 `unzip -o`. `.env.local`은 저장소·zip에 없으므로 유지됩니다.)
+(`.env.local`은 저장소에 없으므로 유지됩니다. 서버의 프로젝트 위치는 팀 저장소 `backend/` 폴더 = `~/apps/sinjung/backend`.)
 `schema.sql`을 고친 경우 위 명령만으로 DB는 바뀌지 않습니다. 변경분을 마이그레이션 SQL로 따로 적용하세요.
 
 서버 접속, 켜기·끄기, 팀원 IP 등록은 팀 내부 문서 「신중 서버 참가 및 사용 설명서」 참고.
@@ -427,6 +485,11 @@ cookies.txt
 | 최근 기록 1건만 | `users.sales_record_id`/`purchase_record_id`는 가장 최근 기록 하나만 가리킴. 전체 내역은 `item_sales`/`item_purchase` 조회 |
 | 이미지 업로드 없음 | `item_image`, `auth_image`는 이미 올라가 있는 이미지의 주소(문자열)만 저장 |
 | 임시 화면 | `src/app/page.js`는 연결 확인용 |
+| 채팅은 폴링 | 새 메시지가 최대 3초 늦게 보임. WebSocket은 별도 서버가 필요해 보류 |
+| GPS 위조 불가 방지 | 도착 확인은 앱이 보낸 좌표를 믿음. 거래 완료 자체는 여전히 판매자 확인으로만 됨 |
+| 안전 장소 추천의 위치 노출 | 중간 지점은 돌려주지 않지만, 추천 목록으로 반경(기본 1km) 안의 대략적 범위는 짐작 가능 |
+| 안전 장소 데이터 | 비어 있음. 공공데이터 CSV를 `load-safe-places.mjs`로 적재해야 추천이 나옴 (그 전에는 빈 목록) |
+| 신고 처리 화면 없음 | DB에 기록만 됨. 확인은 `SELECT * FROM report` |
 
 ### 향후 계획
 
@@ -439,8 +502,13 @@ cookies.txt
 - [x] 거래 완료 API 로그인 보호 전환
 - [x] 카테고리 목록, 물품 수정·삭제, 예약(`RESERVED`) 전환 API
 - [x] 마이페이지 API (프로필, 유저별 물품, 내 거래 내역)
+- [x] 1:1 채팅(폴링), 안 읽은 수, 채팅방 거래 완료
+- [x] 안전 장소 추천(경찰관서·CCTV), 위치 각자 제출
+- [x] 거래 약속·도착 판별(100m, ±60분), 확정 시 자동 RESERVED
+- [x] 신고, 평가 한 줄 후기
+- [ ] 안전 장소 공공데이터 실제 적재 (CSV 확보 후)
 - [ ] 이미지 업로드 (S3 등)
-- [ ] 검색 (제목)
+- [ ] 서버 측 검색·정렬 (현재 프론트 처리)
 - [ ] 실제 Python AI 모델 서버 (팀원, `docs/AI_SERVER_SPEC.md` 규격)
 - [ ] 도메인 연결과 HTTPS 적용
 - [ ] 화면(UI) 개발
